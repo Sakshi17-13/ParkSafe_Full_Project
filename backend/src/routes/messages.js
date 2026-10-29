@@ -12,13 +12,14 @@ export async function postPublicMessage(req, res, next) {
     const vehicle = await Vehicle.findOne({ _id: req.params.id, active: true }).select('_id ownerId number');
     if (!vehicle) return res.status(404).json({ message: 'Vehicle not found or inactive' });
     const message = await Message.create({ vehicleId: vehicle._id, content });
+    if (process.env.PARKSAFE_DIAGNOSTICS === 'true') console.info('[messages] saved public message', { vehicleId: String(vehicle._id), ownerId: String(vehicle.ownerId), messageId: String(message._id) });
     req.app.get('io')?.to(`owner:${vehicle.ownerId}`).emit('new-message', { id: message._id, vehicleNumber: vehicle.number, content, createdAt: message.createdAt });
     res.status(201).json({ ok: true, message: 'Message sent to the vehicle owner.' });
   } catch (e) { next(e); }
 }
 router.post('/public/:id/messages', postPublicMessage);
 router.get('/mine', requireAuth, async (req, res, next) => {
-  try { const vehicles = await Vehicle.find({ ownerId: req.owner.id }).select('_id number'); const ids = vehicles.map(v => v._id); const map = new Map(vehicles.map(v => [String(v._id), v.number])); const messages = await Message.find({ vehicleId: { $in: ids } }).sort({ createdAt: -1 }).limit(100).lean(); res.json({ messages: messages.map(m => ({ ...m, vehicleNumber: map.get(String(m.vehicleId)) || '' })) }); } catch (e) { next(e); }
+  try { const vehicles = await Vehicle.find({ ownerId: req.owner.id }).select('_id number'); const ids = vehicles.map(v => v._id); const map = new Map(vehicles.map(v => [String(v._id), v.number])); const messages = await Message.find({ vehicleId: { $in: ids } }).sort({ createdAt: -1 }).limit(100).lean(); if (process.env.PARKSAFE_DIAGNOSTICS === 'true') console.info('[messages] owner inbox query', { ownerId: String(req.owner.id), vehicleCount: vehicles.length, messageCount: messages.length }); res.json({ messages: messages.map(m => ({ ...m, vehicleNumber: map.get(String(m.vehicleId)) || '' })) }); } catch (e) { next(e); }
 });
 router.patch('/:id/read', requireAuth, async (req, res, next) => {
   try { const vehicles = await Vehicle.find({ ownerId: req.owner.id }).select('_id'); const ids = vehicles.map(v => v._id); const m = await Message.findOneAndUpdate({ _id: req.params.id, vehicleId: { $in: ids } }, { readAt: new Date() }, { new: true }); if (!m) return res.status(404).json({ message: 'Message not found' }); res.json({ ok: true }); } catch (e) { next(e); }

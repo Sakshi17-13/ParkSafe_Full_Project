@@ -43,6 +43,41 @@ const callId = () =>
   globalThis.crypto?.randomUUID?.() ||
   `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+function readVisitorConversation(vehicleId) {
+  try {
+    const latestId = window.localStorage.getItem(
+      `parksafe:conversation:${vehicleId}:latest`
+    );
+    if (!latestId) return null;
+    const raw = window.localStorage.getItem(
+      `parksafe:conversation:${vehicleId}:${latestId}`
+    );
+    const session = raw ? JSON.parse(raw) : null;
+    return session?.id === latestId && typeof session.token === 'string'
+      ? session
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveVisitorConversation(vehicleId, conversationId, token) {
+  const session = { id: conversationId, token };
+  try {
+    window.localStorage.setItem(
+      `parksafe:conversation:${vehicleId}:${conversationId}`,
+      JSON.stringify(session)
+    );
+    window.localStorage.setItem(
+      `parksafe:conversation:${vehicleId}:latest`,
+      conversationId
+    );
+  } catch {
+    // Keep the in-memory conversation usable if browser storage is unavailable.
+  }
+  return session;
+}
+
 /* -------------------------------------------------------
    BRAND
 ------------------------------------------------------- */
@@ -504,7 +539,13 @@ function VehiclePage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [conversationSession, setConversationSession] = useState(() =>
+    readVisitorConversation(id)
+  );
+  const [sent, setSent] = useState(() => Boolean(readVisitorConversation(id)));
+  const [conversation, setConversation] = useState(null);
+  const [conversationError, setConversationError] = useState('');
+  const [conversationRefreshing, setConversationRefreshing] = useState(false);
   const [callState, setCallState] = useState('');
 
   useEffect(() => {
@@ -552,6 +593,53 @@ function VehiclePage() {
     };
   }, [id]);
 
+  useEffect(() => {
+    const session = readVisitorConversation(id);
+    setConversationSession(session);
+    setSent(Boolean(session));
+    setConversation(null);
+  }, [id]);
+
+  useEffect(() => {
+    if (!conversationSession) {
+      setConversation(null);
+      setConversationError('');
+      return undefined;
+    }
+
+    let alive = true;
+    async function refreshConversation(showLoading = false) {
+      if (showLoading && alive) setConversationRefreshing(true);
+      try {
+        const response = await fetch(
+          `${API}/api/public/${encodeURIComponent(id)}/conversation`,
+          { headers: { Authorization: `Bearer ${conversationSession.token}` } }
+        );
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Could not load this conversation.');
+        }
+        if (alive) {
+          setConversation(data.conversation);
+          setConversationError('');
+        }
+      } catch (e) {
+        if (alive) {
+          setConversationError(e.message || 'Could not refresh your conversation.');
+        }
+      } finally {
+        if (alive && showLoading) setConversationRefreshing(false);
+      }
+    }
+
+    refreshConversation();
+    const timer = window.setInterval(() => refreshConversation(), 12000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [id, conversationSession]);
+
   async function sendMessage(e) {
     e.preventDefault();
 
@@ -575,6 +663,18 @@ function VehiclePage() {
       if (!response.ok) {
         throw new Error(data.message || 'Could not send message.');
       }
+
+      if (!data.conversationToken || !data.conversation?.id) {
+        throw new Error('The server did not return secure conversation access.');
+      }
+
+      const session = saveVisitorConversation(
+        id,
+        data.conversation.id,
+        data.conversationToken
+      );
+      setConversationSession(session);
+      setConversation(data.conversation);
 
       setSent(true);
       setMessage('');
@@ -699,12 +799,66 @@ function VehiclePage() {
           {sent ? (
             <div className="success-panel">
               <CheckCircle2 size={58} />
-              <h2>Message sent!</h2>
-              <p>Your message has been delivered to the vehicle owner.</p>
+              <h2>Your private conversation</h2>
+              <p>Your message was sent anonymously. Only this browser has its conversation access token.</p>
+
+              {conversation ? (
+                <div className="visitor-conversation">
+                  <div className="visitor-message">
+                    <small>Your message</small>
+                    <p>{conversation.content}</p>
+                  </div>
+                  <div className="owner-reply">
+                    <small>{conversation.reply ? 'Owner replied' : 'Waiting for owner'}</small>
+                    {conversation.reply ? (
+                      <p>{conversation.reply}</p>
+                    ) : (
+                      <p className="conversation-status">Your message is waiting for a reply.</p>
+                    )}
+                    {conversation.replyAt && (
+                      <time>{new Date(conversation.replyAt).toLocaleString()}</time>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p>{conversationError || 'Loading your conversation…'}</p>
+              )}
+              {conversationError && conversation && (
+                <div className="inline-error">{conversationError}</div>
+              )}
 
               <button
                 className="outline-button"
-                onClick={() => setSent(false)}
+                disabled={conversationRefreshing}
+                onClick={async () => {
+                  if (!conversationSession) return;
+                  setConversationRefreshing(true);
+                  setConversationError('');
+                  try {
+                    const response = await fetch(
+                      `${API}/api/public/${encodeURIComponent(id)}/conversation`,
+                      { headers: { Authorization: `Bearer ${conversationSession.token}` } }
+                    );
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.message || 'Could not refresh conversation.');
+                    setConversation(data.conversation);
+                  } catch (e) {
+                    setConversationError(e.message || 'Could not refresh conversation.');
+                  } finally {
+                    setConversationRefreshing(false);
+                  }
+                }}
+              >
+                {conversationRefreshing ? 'Refreshing…' : 'Refresh conversation'}
+              </button>
+
+              <button
+                className="outline-button"
+                onClick={() => {
+                  setConversationSession(null);
+                  setConversation(null);
+                  setSent(false);
+                }}
               >
                 Send another message
               </button>

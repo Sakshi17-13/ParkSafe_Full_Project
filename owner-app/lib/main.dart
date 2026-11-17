@@ -963,53 +963,106 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   Future<void> _detail(Map<String, dynamic> m) async {
-    final reply = TextEditingController(text: m['reply'] ?? '');
+    final reply = TextEditingController();
+    var savedReply = (m['reply'] ?? '').toString();
+    var sendingReply = false;
+    var replyError = '';
+    var replySuccess = '';
     try {
       await ApiService.markRead(m['_id']);
     } catch (_) {}
     if (!mounted) return;
-    await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-                title: Text(m['vehicleNumber'] ?? 'Message'),
-                content: SingleChildScrollView(
-                    child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                      Text(m['content'] ?? ''),
-                      const SizedBox(height: 20),
-                      TextField(
-                          controller: reply,
-                          maxLines: 3,
-                          decoration: const InputDecoration(
-                              labelText: 'Reply (optional)',
-                              border: OutlineInputBorder())),
-                      if ((m['reply'] ?? '').toString().isNotEmpty)
-                        Padding(
-                            padding: const EdgeInsets.only(top: 10),
-                            child: Text('Saved reply: ${m['reply']}'))
-                    ])),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Close')),
-                  FilledButton(
-                      onPressed: () async {
-                        try {
-                          if (reply.text.trim().isNotEmpty)
-                            await ApiService.reply(m['_id'], reply.text.trim());
-                          if (!mounted) return;
-                          Navigator.pop(context);
-                          await load();
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(e.toString())));
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(m['vehicleNumber'] ?? 'Message'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Visitor message',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Text(m['content'] ?? ''),
+                const SizedBox(height: 18),
+                if (savedReply.isNotEmpty) ...[
+                  const Text('Your previous reply',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  Text(savedReply),
+                  const SizedBox(height: 18),
+                ],
+                TextField(
+                  controller: reply,
+                  maxLength: 500,
+                  maxLines: 3,
+                  onChanged: (_) => setDialogState(() {
+                    replyError = '';
+                    replySuccess = '';
+                  }),
+                  decoration: const InputDecoration(
+                    labelText: 'Write a reply',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                if (replyError.isNotEmpty)
+                  Text(replyError, style: const TextStyle(color: Colors.red)),
+                if (replySuccess.isNotEmpty)
+                  Text(replySuccess,
+                      style: const TextStyle(color: Colors.green)),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed:
+                  sendingReply ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Close'),
+            ),
+            FilledButton(
+              onPressed: sendingReply || reply.text.trim().isEmpty
+                  ? null
+                  : () async {
+                      setDialogState(() {
+                        sendingReply = true;
+                        replyError = '';
+                        replySuccess = '';
+                      });
+                      try {
+                        final updated = await ApiService.reply(
+                            m['_id'].toString(), reply.text.trim());
+                        if (!context.mounted) return;
+                        setDialogState(() {
+                          savedReply = (updated['reply'] ?? '').toString();
+                          reply.clear();
+                          replySuccess = 'Reply sent to the visitor.';
+                        });
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        setDialogState(() => replyError =
+                            e.toString().replaceFirst('Exception: ', ''));
+                      } finally {
+                        if (context.mounted) {
+                          setDialogState(() => sendingReply = false);
                         }
-                      },
-                      child: const Text('Save Reply'))
-                ]));
+                      }
+                    },
+              child: sendingReply
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Send Reply'),
+            ),
+          ],
+        ),
+      ),
+    );
+    reply.dispose();
+    if (mounted) await load();
   }
 }
 

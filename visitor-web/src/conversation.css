@@ -1,0 +1,49 @@
+.visitor-conversation {
+  width: 100%;
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 12px;
+  text-align: left;
+}
+
+.visitor-message,
+.owner-reply {
+  padding: 14px 16px;
+  border: 1px solid #e2eaf3;
+  border-radius: 13px;
+  background: #f8fbff;
+}
+
+.owner-reply {
+  background: #edf6ff;
+}
+
+.visitor-message small,
+.owner-reply small {
+  color: #61758d;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.visitor-message p,
+.owner-reply p {
+  margin: 7px 0 0;
+  color: #243b55;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.owner-reply time {
+  display: block;
+  margin-top: 8px;
+  color: #718198;
+  font-size: 10px;
+}
+
+.success-panel .outline-button:disabled {
+  cursor: wait;
+  opacity: .65;
+}

@@ -168,13 +168,14 @@ class ApiService {
   }
 
 // Reply to a message
-  static Future<void> reply(String id, String reply) async {
-    await _request(
+  static Future<Map<String, dynamic>> reply(String id, String reply) async {
+    final d = await _request(
       '/api/$id/reply',
       method: 'PATCH',
       body: {
         'reply': reply,
       },
     );
+    return Map<String, dynamic>.from(d['message'] as Map);
   }
 }

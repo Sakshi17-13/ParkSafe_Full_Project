@@ -12,7 +12,7 @@ ParkSafe lets a vehicle owner register vehicles and generate a QR code. A visito
 - Phase 1 UI and QR generation run locally; the owner app also includes API integration for Phase 2.
 - Phase 2 backend integration covers registration/login, vehicle CRUD, public vehicle lookup and anonymous messages/inbox.
 - The website includes browser WebRTC call setup and Socket.IO signaling. The Flutter app includes foreground incoming-call signaling/UI and WebRTC audio acceptance source. Browser/app audio calls require HTTPS (except localhost), microphone permission, working network connectivity and STUN/TURN. A TURN server is not bundled; set `TURN_URL`, `TURN_USERNAME`, `TURN_CREDENTIAL` in the website environment if needed.
-- Incoming calls in this student-demo version require the owner app to be open/connected. Background/terminated Android call wake-up requires Firebase Cloud Messaging and Android call notification integration, not included as a configured cloud service.
+- FCM notifications are wired for visitor messages and call requests. A Firebase Android app config and an external Firebase Admin service-account file must be configured before push delivery can work. WebRTC audio still requires the owner app to open the incoming request; the visitor website does not dial or reveal a phone number.
 - No service can guarantee a permanently free TURN/hosting plan. Do not deploy without HTTPS, rate limits, secure secrets and testing.
 - Flutter platform folders may need generation using `flutter create . --platforms=android` from `owner-app/` if not present. All app Dart source is included.
 

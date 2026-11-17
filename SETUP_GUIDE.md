@@ -88,5 +88,58 @@ For a physical phone scanner, browsers require a secure context for camera acces
 - Public vehicle endpoint only returns public vehicle fields; phone number is never exposed.
 - Anonymous messaging has basic validation and rate limiting, but this is a student starter. Add moderation, abuse reports, stronger rate limits, logging/monitoring and HTTPS before public deployment.
 - Owner replies are stored in the same message record. Visitor identity/contact information is not requested.
-- Foreground call signaling is included. Background/terminated-device call notifications require FCM setup and Android call-notification handling.
+- FCM push delivery requires the Firebase project configuration described below. Android may delay background delivery, and a force-stopped app must be opened again before FCM can resume. A call notification opens the existing WebRTC acceptance flow; it does not place a phone dialler call.
 - JWT is stored with `flutter_secure_storage` in the app. On web, the demo uses local storage; use a stricter production session strategy for deployment.
+
+## 8. Firebase Cloud Messaging setup (Android owner app)
+
+Firebase is not preconfigured in this source tree. Create a Firebase project and add an Android app with package name `com.example.parksafe_owner`. Enable Cloud Messaging, then download its `google-services.json` to:
+
+```text
+D:\Projects\ParkSafe_Full_Project\owner-app\android\app\google-services.json
+```
+
+The file is ignored by Git. Do not rename it or commit it.
+
+Create a Firebase Admin service-account key in Firebase Console → Project settings → Service accounts. Store the JSON file outside this repository, for example `C:\ParkSafeSecrets\firebase-admin.json`. Never place its private key in Flutter, this repository, or a chat. From the PowerShell window used to start the backend, set the credential path and project ID:
+
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS = 'C:\ParkSafeSecrets\firebase-admin.json'
+$env:FIREBASE_PROJECT_ID = 'your-firebase-project-id'
+Set-Location 'D:\Projects\ParkSafe_Full_Project\backend'
+npm install
+npm run dev
+```
+
+Alternatively, put these two environment variables in the ignored `backend\.env`. `GOOGLE_APPLICATION_CREDENTIALS` must point to the external JSON key file. Do not put the key file itself under the project folder. The server starts without Firebase credentials, but FCM is disabled until credentials are configured.
+
+Install and rebuild the Android app after adding `google-services.json`:
+
+```powershell
+Set-Location 'D:\Projects\ParkSafe_Full_Project\owner-app'
+flutter pub get
+flutter run
+```
+
+Run static analysis and create a release APK with:
+
+```powershell
+flutter analyze
+flutter build apk --release
+```
+
+The APK is written to `owner-app\build\app\outputs\flutter-apk\app-release.apk`. These commands require the Firebase Android config file above; without it, the Google Services Gradle task will stop the Android build.
+
+The app requests notification permission after owner login. On Android 13 and later, grant the system notification prompt. It registers the FCM token with authenticated `POST /api/auth/fcm-token`; logout removes that device token. Token refresh is registered automatically. MongoDB stores the token list on the owner record with the field excluded from normal queries. Invalid or expired FCM tokens are removed after Firebase reports them as unregistered.
+
+Visitor messages continue to use `POST /api/public/:id/messages` with `{ "message": "..." }`. After MongoDB saves a message, the backend sends a generic FCM notification to that vehicle's owner without putting the visitor's message text on the lock screen. Visitor call requests use the existing `/visitor` Socket.IO `call:start` event and also send an FCM notification. Tapping a message notification opens Messages; tapping a call notification opens the incoming call card. If the app was terminated, the stored owner session is restored when the backend is reachable. The owner still accepts the existing WebRTC call after opening the app.
+
+Foreground FCM notifications are displayed with a local notification. Background and terminated notification messages are displayed by Android; tapping them routes to the relevant app screen. The app must have been opened once and allowed to register. Android may stop FCM until the user manually opens an app that was force-stopped in system settings. Push delivery and call audio must be tested on a Google Play capable Android device or emulator; the source-only checks do not prove Firebase account configuration or live delivery.
+
+To test message and call notifications:
+
+1. Start the backend with the external service-account path set and confirm its console prints `[fcm] Firebase Admin initialized`.
+2. Install the rebuilt owner app, log in, and allow notifications. Leave the app open, background it, and then fully close it for separate state tests.
+3. Send a visitor message to a QR for a vehicle owned by that logged-in account. Confirm the message appears in the owner inbox and the notification opens Messages.
+4. Press Call Owner from the visitor page. Confirm the call request notification opens the incoming call card, then accept it to continue through the existing WebRTC flow. Keep the backend running while testing a call.
+5. Repeat while the app is foregrounded, backgrounded, and terminated. A force-stopped app must first be manually reopened.

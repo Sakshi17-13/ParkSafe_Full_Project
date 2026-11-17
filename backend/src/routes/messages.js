@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import Vehicle from '../models/Vehicle.js';
 import Message from '../models/Message.js';
 import { requireAuth } from '../middleware.js';
+import { sendPushToOwner } from '../services/pushNotifications.js';
 const router = Router();
 export async function postPublicMessage(req, res, next) {
   try {
@@ -13,6 +14,11 @@ export async function postPublicMessage(req, res, next) {
     if (!vehicle) return res.status(404).json({ message: 'Vehicle not found or inactive' });
     const message = await Message.create({ vehicleId: vehicle._id, content });
     if (process.env.PARKSAFE_DIAGNOSTICS === 'true') console.info('[messages] saved public message', { vehicleId: String(vehicle._id), ownerId: String(vehicle.ownerId), messageId: String(message._id) });
+    void sendPushToOwner(vehicle.ownerId, {
+      title: 'New ParkSafe message',
+      body: `A visitor sent a message about ${vehicle.number}.`,
+      data: { type: 'message', vehicleId: String(vehicle._id), vehicleNumber: vehicle.number, messageId: String(message._id) },
+    });
     req.app.get('io')?.to(`owner:${vehicle.ownerId}`).emit('new-message', { id: message._id, vehicleNumber: vehicle.number, content, createdAt: message.createdAt });
     res.status(201).json({ ok: true, message: 'Message sent to the vehicle owner.' });
   } catch (e) { next(e); }

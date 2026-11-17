@@ -19,7 +19,7 @@
 - [x] WebRTC browser-to-Flutter foreground call source
 - [ ] Configure HTTPS and TURN for real networks
 - [ ] Test calling across different devices/networks
-- [ ] Add FCM/background call notification if required
+- [x] Add FCM message and call-request notification source (Firebase project credentials still required)
 - [ ] Security review, moderation and production deployment
 
 ## Demo scope note

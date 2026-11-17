@@ -9,9 +9,11 @@ import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.js';
 import vehicleRoutes from './routes/vehicles.js';
 import messageRoutes from './routes/messages.js';
+import { initializePushNotifications, sendPushToOwner } from './services/pushNotifications.js';
 
 const app = express();
 const server = http.createServer(app);
+initializePushNotifications();
 const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173').split(',').map(s => s.trim());
 function isAllowedOrigin(origin) {
   if (!origin || allowedOrigins.includes(origin)) return true;
@@ -73,6 +75,11 @@ visitorNs.on('connection', socket => {
       if (!vehicle || !vehicle.active || typeof callId !== 'string') return socket.emit('call:error', { message: 'Vehicle unavailable.' });
       socket.join(`call:${callId}`);
       activeCalls.set(callId, { visitorSocketId: socket.id, ownerId: String(vehicle.ownerId) });
+      void sendPushToOwner(vehicle.ownerId, {
+        title: 'ParkSafe call request',
+        body: `A visitor wants to contact you about ${vehicle.number}.`,
+        data: { type: 'call', vehicleId: String(vehicle._id), vehicleNumber: vehicle.number, callId },
+      });
       io.to(`owner:${vehicle.ownerId}`).emit('call:incoming', { callId, vehicleId, vehicleNumber: vehicle.number, visitorSocketId: socket.id });
       socket.data.callId = callId;
     } catch { socket.emit('call:error', { message: 'Unable to start call.' }); }

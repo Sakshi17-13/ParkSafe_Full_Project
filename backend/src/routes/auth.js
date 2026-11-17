@@ -25,4 +25,25 @@ router.post('/login', async (req, res, next) => {
 router.get('/me', requireAuth, async (req, res, next) => {
   try { const owner = await Owner.findById(req.owner.id).select('name email'); if (!owner) return res.status(404).json({ message: 'Account not found' }); res.json({ owner: { id: owner._id, name: owner.name, email: owner.email } }); } catch (e) { next(e); }
 });
+export async function registerFcmToken(req, res, next) {
+  try {
+    const token = req.body.token;
+    if (typeof token !== 'string' || !token.trim() || token.length > 4096) return res.status(400).json({ message: 'A valid FCM token is required.' });
+    const normalized = token.trim();
+    await Owner.updateMany({ _id: { $ne: req.owner.id }, fcmTokens: normalized }, { $pull: { fcmTokens: normalized } });
+    const owner = await Owner.findByIdAndUpdate(req.owner.id, { $addToSet: { fcmTokens: normalized } }, { new: false });
+    if (!owner) return res.status(404).json({ message: 'Account not found' });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+}
+router.post('/fcm-token', requireAuth, registerFcmToken);
+export async function removeFcmToken(req, res, next) {
+  try {
+    const token = req.body.token;
+    if (typeof token !== 'string' || !token.trim() || token.length > 4096) return res.status(400).json({ message: 'A valid FCM token is required.' });
+    await Owner.updateOne({ _id: req.owner.id }, { $pull: { fcmTokens: token.trim() } });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+}
+router.delete('/fcm-token', requireAuth, removeFcmToken);
 export default router;
